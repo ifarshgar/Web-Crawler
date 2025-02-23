@@ -24,8 +24,8 @@ This tool automates the process of retrieving all static assets (images, stylesh
 1.  **Clone the repository:**
 
     ```bash
-    git clone [your-repository-url]
-    cd [repository-directory]
+    git clone git@github.com:ifarshgar/Web-Crawler.git
+    cd Web-Crawler
     ```
 
 2.  **Install dependencies:**

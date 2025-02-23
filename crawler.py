@@ -73,11 +73,27 @@ def download_assets(url, base_folder):
 
     # Download CSS files
     for link in soup.find_all('link', href=True):
-        css_url = urljoin(url, link['href'])
-        try:
-            download_file(css_url, assets_folder)
-        except Exception as e:
-            print(f"Failed to download {css_url}: {e}")
+        if 'stylesheet' in link.get('rel', []):
+            css_url = urljoin(url, link['href'])
+            try:
+                css_path = download_file(css_url, assets_folder)
+                # Parse the CSS file to find font files
+                with open(css_path, 'r', encoding='utf-8') as f:
+                    css_content = f.read()
+                # Find font URLs in the CSS file
+                import re
+                font_urls = re.findall(r'url\((.*?)\)', css_content)
+                for font_url in font_urls:
+                    font_url = font_url.strip('"\'').strip('"\'').strip()
+                    if font_url.startswith('http'):
+                        continue  # Skip absolute URLs
+                    full_font_url = urljoin(css_url, font_url)
+                    try:
+                        download_file(full_font_url, assets_folder)
+                    except Exception as e:
+                        print(f"Failed to download font {full_font_url}: {e}")
+            except Exception as e:
+                print(f"Failed to download {css_url}: {e}")
 
     # Download JavaScript files
     for script in soup.find_all('script', src=True):

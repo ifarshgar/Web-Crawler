@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 DOWNLOADS_FOLDER = 'Downloads'
+visited_urls = set()  # Track visited URLs to avoid duplicates
+MAX_DEPTH = 5  # Maximum depth for recursive crawling
 
 # Function to create a unique folder name based on the URL
 def create_unique_folder_name(url):
@@ -17,17 +19,17 @@ def create_unique_folder_name(url):
         folder_name = f"{base_folder_name}{counter}"
         counter += 1
 
+    if folder_name.endswith('.app'):
+        folder_name = folder_name.replace('.app', '-app')
+
     return folder_name
 
 # Function to clean the path by removing unnecessary parent folders
 def clean_path(path):
     # Split the path into parts
     parts = path.split('/')
-    # Remove unnecessary parent folders like 'html/pylon1/assets'
-    if 'html' in parts and 'pylon1' in parts and 'assets' in parts:
-        # Find the index of 'assets' and keep everything after it
-        assets_index = parts.index('assets')
-        parts = parts[assets_index + 1:]
+    # Remove empty parts (e.g., from leading/trailing slashes)
+    parts = [part for part in parts if part]
     # Rejoin the parts into a clean path
     return '/'.join(parts)
 
@@ -53,9 +55,24 @@ def download_file(url, base_folder):
     return local_path
 
 # Function to download all assets and preserve the cleaned directory structure
-def download_assets(url, base_folder):
-    response = requests.get(url)
-    response.raise_for_status()
+def download_assets(url, base_folder, depth=0):
+    # Stop if the depth exceeds the maximum limit
+    if depth > MAX_DEPTH:
+        print(f"Reached maximum depth ({MAX_DEPTH}) for URL: {url}")
+        return
+
+    # Skip if the URL has already been visited
+    if url in visited_urls:
+        return
+    visited_urls.add(url)
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Failed to fetch {url}: {e}")
+        return
+
     soup = BeautifulSoup(response.text, 'html.parser')
 
     # Create the base folder if it doesn't exist
@@ -67,16 +84,12 @@ def download_assets(url, base_folder):
         f.write(response.text)
     print(f"Saved HTML: {html_file_path}")
 
-    # Create an assets folder alongside the index.html
-    assets_folder = os.path.join(base_folder, 'assets')
-    os.makedirs(assets_folder, exist_ok=True)
-
     # Download CSS files
     for link in soup.find_all('link', href=True):
         if 'stylesheet' in link.get('rel', []):
             css_url = urljoin(url, link['href'])
             try:
-                css_path = download_file(css_url, assets_folder)
+                css_path = download_file(css_url, base_folder)
                 # Parse the CSS file to find font files
                 with open(css_path, 'r', encoding='utf-8') as f:
                     css_content = f.read()
@@ -89,7 +102,7 @@ def download_assets(url, base_folder):
                         continue  # Skip absolute URLs
                     full_font_url = urljoin(css_url, font_url)
                     try:
-                        download_file(full_font_url, assets_folder)
+                        download_file(full_font_url, base_folder)
                     except Exception as e:
                         print(f"Failed to download font {full_font_url}: {e}")
             except Exception as e:
@@ -99,7 +112,7 @@ def download_assets(url, base_folder):
     for script in soup.find_all('script', src=True):
         js_url = urljoin(url, script['src'])
         try:
-            download_file(js_url, assets_folder)
+            download_file(js_url, base_folder)
         except Exception as e:
             print(f"Failed to download {js_url}: {e}")
 
@@ -107,7 +120,7 @@ def download_assets(url, base_folder):
     for img in soup.find_all('img', src=True):
         img_url = urljoin(url, img['src'])
         try:
-            download_file(img_url, assets_folder)
+            download_file(img_url, base_folder)
         except Exception as e:
             print(f"Failed to download {img_url}: {e}")
 
@@ -115,9 +128,18 @@ def download_assets(url, base_folder):
     for link in soup.find_all('link', rel=['icon', 'apple-touch-icon']):
         icon_url = urljoin(url, link['href'])
         try:
-            download_file(icon_url, assets_folder)
+            download_file(icon_url, base_folder)
         except Exception as e:
             print(f"Failed to download {icon_url}: {e}")
+
+    # Recursively download linked pages within the same domain
+    for a in soup.find_all('a', href=True):
+        linked_url = urljoin(url, a['href'])
+        parsed_linked_url = urlparse(linked_url)
+        if parsed_linked_url.netloc == urlparse(url).netloc:
+            if linked_url not in visited_urls:  # Avoid circular links
+                linked_folder = os.path.join(base_folder, parsed_linked_url.path.strip('/'))
+                download_assets(linked_url, linked_folder, depth + 1)  # Increment depth
 
 # Example usage
 url = input('Please enter your URL: ')

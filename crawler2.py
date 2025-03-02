@@ -22,7 +22,7 @@ def create_unique_folder_name(url):
     domain_parts = folder_name.split('.')
     if len(domain_parts) > 1:
         domain_parts[-1] = f'-{domain_parts[-1]}'
-        folder_name = '.'.join(domain_parts)
+        folder_name = '-'.join(domain_parts)
 
     return folder_name
 
